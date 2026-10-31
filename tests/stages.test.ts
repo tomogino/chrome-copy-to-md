@@ -10,7 +10,7 @@ import { markdownToHtml } from "../src/formatter/markdownToHtml";
 describe("htmlToMarkdown", () => {
   it("入れ子リストのインデント（2段/3段）", () => {
     const md = htmlToMarkdown("<ul><li>a<ul><li>b<ul><li>c</li></ul></li></ul></li></ul>");
-    expect(JSON.stringify(md)).toMatchInlineSnapshot(`""- a\\n - b\\n - c""`);
+    expect(JSON.stringify(md)).toMatchInlineSnapshot(`""- a\\n  - b\\n    - c""`);
   });
 });
 

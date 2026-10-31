@@ -8,6 +8,7 @@ import {
   insertSectionDividers,
   collapseTextParagraphs,
 } from "./normalizeMarkdown";
+import { trimKeepingListIndent } from "./listSyntax";
 
 /** 各変換段階の結果を受け取るコールバック（デバッグ用・任意） */
 export type StageTracer = (stage: string, value: string) => void;
@@ -32,5 +33,5 @@ export function formatSelection(html: string, trace?: StageTracer): string {
   trace?.("insertSectionDividers", body);
   body = collapseTextParagraphs(body);
   trace?.("collapseTextParagraphs", body);
-  return body.trim();
+  return trimKeepingListIndent(body);
 }

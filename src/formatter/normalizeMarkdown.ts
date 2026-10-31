@@ -1,4 +1,5 @@
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
+import { NON_LIST_INDENT } from "./listSyntax";
 
 /**
  * 見出しを ## 始まりに正規化する（コードブロック外のみ）
@@ -85,8 +86,8 @@ export function escapeForGoogleDocs(markdown: string): string {
 export function normalizeIndent(markdown: string): string {
   const { protected: safe, store } = protectCodeBlocks(markdown);
 
-  // 行頭スペース・タブがあり、直後が * - 数字 でない行はインデントを除去
-  const normalized = safe.replace(/^[ \t]+(?![*\-\d])/gm, "");
+  // 行頭スペース・タブがあり、直後がリストマーカーでない行はインデントを除去
+  const normalized = safe.replace(NON_LIST_INDENT, "");
 
   return restoreCodeBlocks(normalized, store);
 }

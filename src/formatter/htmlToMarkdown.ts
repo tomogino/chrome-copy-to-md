@@ -3,6 +3,7 @@
  * DOM APIを使うため content script 内でのみ動作する。
  */
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
+import { LIST_MARKER, NON_LIST_INDENT, startsWithIndentedListLine, trimKeepingListIndent } from "./listSyntax";
 
 function getIndent(level: number): string {
   return "  ".repeat(level);
@@ -100,16 +101,7 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
     case "ul": {
       const items = children
         .filter((c) => (c as Element).tagName?.toLowerCase() === "li")
-        .map((li) => {
-          const inner = Array.from(li.childNodes)
-            .map((c) => nodeToMarkdown(c, listLevel + 1))
-            .join("")
-            .trimEnd()
-            // li内テキストと入れ子リストの間にHTMLの整形空白（\n + スペース）が入ると
-            // Markdown上で空行になるため除去する
-            .replace(/\n[ \t]*\n(\s*[*\-\d])/g, "\n$1");
-          return `${getIndent(listLevel)}- ${inner}`;
-        })
+        .map((li) => listItemToMarkdown(li as Element, listLevel, "-"))
         .join("\n");
       // 前後の文章と分離するため先頭に \n を追加
       return `\n${items}\n\n`;
@@ -118,21 +110,14 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
     case "ol": {
       const items = children
         .filter((c) => (c as Element).tagName?.toLowerCase() === "li")
-        .map((li, i) => {
-          const inner = Array.from(li.childNodes)
-            .map((c) => nodeToMarkdown(c, listLevel + 1))
-            .join("")
-            .trimEnd()
-            .replace(/\n[ \t]*\n(\s*[*\-\d])/g, "\n$1");
-          return `${getIndent(listLevel)}${i + 1}. ${inner}`;
-        })
+        .map((li, i) => listItemToMarkdown(li as Element, listLevel, `${i + 1}.`))
         .join("\n");
       return `\n${items}\n\n`;
     }
 
     case "li": {
-      const inner = children.map((c) => nodeToMarkdown(c, listLevel)).join("").trimEnd();
-      return `${getIndent(listLevel)}- ${inner}\n`;
+      // 親の ul/ol を含まない選択範囲では li が単独で現れる
+      return `${listItemToMarkdown(el, listLevel, "-")}\n`;
     }
 
     case "a": {
@@ -163,6 +148,31 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
     default:
       return children.map((c) => nodeToMarkdown(c, listLevel)).join("");
   }
+}
+
+const BLANK_LINES_BEFORE_LIST = new RegExp(String.raw`\n\s*\n(?=[ \t]*${LIST_MARKER})`, "g");
+
+/**
+ * li 要素を Markdown のリスト項目に変換する（ul / ol / 単独 li 共通）。
+ * 子要素は listLevel + 1 で変換するため、入れ子リストは2スペース/階層で字下げされる。
+ */
+function listItemToMarkdown(li: Element, listLevel: number, marker: string): string {
+  const raw = Array.from(li.childNodes)
+    .map((c) => nodeToMarkdown(c, listLevel + 1))
+    .join("");
+
+  // li 内のコードブロックを保護してから空白を整理する
+  const { protected: safe, store } = protectCodeBlocks(raw);
+  // 本文と入れ子リストの間の空行（HTMLの整形空白や <p> 由来）を除去する
+  const body = safe.trimEnd().replace(BLANK_LINES_BEFORE_LIST, "\n");
+
+  // 子リストの途中から選択した場合など、li 自身の本文がないときは
+  // 空の親項目（"- " だけの行）を出さず、子リストを元の階層のまま返す
+  if (startsWithIndentedListLine(body)) {
+    return restoreCodeBlocks(trimKeepingListIndent(body), store);
+  }
+
+  return `${getIndent(listLevel)}${marker} ${restoreCodeBlocks(body.trimStart(), store)}`;
 }
 
 function tableToMarkdown(table: Element): string {
@@ -198,11 +208,10 @@ export function htmlToMarkdown(html: string): string {
   const normalized = safe
     // 行末の余分なスペース・タブを除去（Markdownの強制改行 "  \n" も除去）
     .replace(/[ \t]+$/gm, "")
-    // ネストリスト（"  * " / "  - "）以外の行頭スペース・タブを除去
-    .replace(/^[ \t]+(?![*\-\d])/gm, "")
+    // ネストリスト（"  * " / "  - " / "  1. "）以外の行頭スペース・タブを除去
+    .replace(NON_LIST_INDENT, "")
     // 3連続以上の改行を2つに
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .replace(/\n{3,}/g, "\n\n");
 
-  return restoreCodeBlocks(normalized, store);
+  return restoreCodeBlocks(trimKeepingListIndent(normalized), store);
 }
