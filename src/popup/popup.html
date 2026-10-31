@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatGPT Markdown Exporter</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1 class="title">ChatGPT<br />Markdown Exporter</h1>
+
+      <div class="buttons">
+        <button id="btn-conversation-log" class="btn btn-primary">
+          <span class="btn-icon">📋</span>
+          <span class="btn-text">
+            <strong>Copy as Conversation Log</strong>
+            <small>全会話を順番通りに保存</small>
+          </span>
+        </button>
+
+        <button id="btn-knowledge-note" class="btn btn-secondary">
+          <span class="btn-icon">📝</span>
+          <span class="btn-text">
+            <strong>Copy as Styled Knowledge Note</strong>
+            <small>Assistant回答を中心に知識ノート化</small>
+          </span>
+        </button>
+
+        <button id="btn-selection-copy" class="btn btn-tertiary">
+          <span class="btn-icon">✂️</span>
+          <span class="btn-text">
+            <strong>Copy Selection</strong>
+            <small>選択中のテキストをコピー</small>
+          </span>
+        </button>
+      </div>
+
+      <div id="status" class="status status-idle">
+        <span id="status-text">準備完了</span>
+      </div>
+    </div>
+
+    <script type="module" src="popup.ts"></script>
+  </body>
+</html>

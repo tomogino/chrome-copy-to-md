@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "ChatGPT Markdown Exporter",
+  "version": "1.0.0",
+  "description": "ChatGPTの会話をMarkdown形式でコピーしてGoogle Docsに貼り付けやすくする",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*"
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "ChatGPT Markdown Exporter"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "js": ["content/contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
