@@ -17,3 +17,6 @@ coverage/
 .vscode/
 .idea/
 *.log
+
+# local sample output (may contain conversation content)
+test.md
