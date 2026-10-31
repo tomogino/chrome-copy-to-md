@@ -31,8 +31,9 @@
   - クリップボードコピー（Promise-based ClipboardItem で HTML+テキスト同時）
   - content script 動的注入リトライ
   - ダークテーマPopup UI
+  - 回帰テスト（Vitest + jsdom、2026-10-31〜）
+  - Copy Selection 開発用デバッグトレース（2026-10-31〜）
 - **未実装**:
-  - ユニットテスト
   - Chrome Web Storeアイコン（16/48/128px）・説明文
 - **MVP外**:
   - 表→リスト変換オプション（README言及あり）
@@ -44,22 +45,27 @@
 ## 3. 現在の実装状況
 
 - **現在どこまでできているか**: 機能完成。3モードのコピーが動作する状態
-- **現在のPhase**: 品質改善フェーズ（主要バグ解消済み）
+- **現在のPhase**: Copy Selection 変換精度向上フェーズ（Phase 1・2A 完了、次は Phase 2B 以降）
+- **Git**: `main` ブランチ / リモート `https://github.com/tomogino/chrome-copy-to-md.git`（`test.md` は履歴から削除済み・`.gitignore` 対象）
 
-- **直近の実装内容**（2026-05-24）:
+### 直近の実装内容（2026-10-31）
 
-  **Selection Copy 機能追加:**
-  - `extractConversation.ts`: `extractSelection()` 追加 — `getSelection().getRangeAt(0).cloneContents()` → UI要素（button/svg/aria-label）除去 → innerHTML
-  - `contentScript.ts`: `selectionCopy` モードのハンドラ追加
-  - `formatter/formatSelection.ts`: 新規 — Knowledge Note と同じ normalizer パイプライン（`normalizeHeadings` → `normalizeBullets` → `normalizeIndent` → `replaceDoubleQuotes` → `escapeForGoogleDocs` → `insertSectionDividers` → `collapseTextParagraphs`）
-  - `popup.ts`: `selectionCopy` 分岐追加、件数表示を条件付きに（Selection は件数なし）
-  - `popup.html`: "Copy Selection" ボタン追加（✂️アイコン、紫系）
-  - `popup.css`: `btn-tertiary`（`#3d2a5a`）追加
+**Phase 1｜開発基盤（変換ロジックは変更なし）:**
+- Git 初期化、`.gitignore` 整備（`node_modules/` `dist/` `.env*` `test.md` 等）
+- Vitest 2 + jsdom 導入（`vitest.config.ts`、`npm test` / `npm run test:update`）
+- Characterization test（現行動作の記録）:
+  - `tests/fixtures/selection/*.html` → 本番と同じ `extractSelection → formatSelection → markdownToHtml` に通し、各段階を `tests/__snapshots__/selection/*.{1-extracted.html,2-markdown.md,3-clipboard.html}` にファイル保存。修正前後は `git diff` で比較
+  - 部分選択（段落途中の開始/終了など）、変換段階ごとの切り分け、Conversation Log / Knowledge Note のスナップショット
+- デバッグトレース: `formatSelection(html, trace?)` に任意の段階コールバックを追加（出力不変をテストで検証）。Popup DevTools で `localStorage.setItem("ccg:debug","1")` すると Extracted HTML / Markdown 各段階 / Clipboard HTML をコンソール出力（`src/debug/selectionDebug.ts`）
 
-  **コードクリーンアップ（Bug A/B 修正残骸の除去）:**
-  - `markdownToHtml.ts`: コードブロックを `<p>+<br>+&nbsp;` ハック → 自然な `<pre><code>` に戻す
-  - `htmlToMarkdown.ts`: `pre` ハンドラの `\n{2,}→\n`（空行まで消す過剰処理）→ `\n{3,}→\n\n` に戻す
-  - `popup.ts`: DEBUGログ（`console.log`）2行削除
+**Phase 2A｜入れ子リストの階層保持:**
+- 原因: 行頭空白除去の正規表現 `^[ \t]+(?![*\-\d])` がバックトラックし、リストのインデントを常に1スペースに削っていた → `markdownToHtml` の `floor(1/2)=0` で全階層がフラット化
+- 修正:
+  - `src/formatter/listSyntax.ts` 新設。リスト行判定を集約（`LIST_MARKER` / `NON_LIST_INDENT` / `trimKeepingListIndent`）
+  - `htmlToMarkdown.ts`: ul / ol / 単独 li を `listItemToMarkdown()` に統一。li 内コードブロックを保護してから空白整理、子リスト直前の空行除去、本文のない親項目（部分選択時）は出さない
+  - `normalizeIndent` と `formatSelection` の末尾 trim も同じ基準に統一
+- 共通処理のため Conversation Log / Knowledge Note の入れ子リストも改善
+- 仕様テスト `tests/nestedList.test.ts`（期待値を明示したassertion、17件）
 
 ---
 
@@ -71,32 +77,63 @@
 - **根本原因（確定）**: Google Docs は HTML ペースト時にすべてのブロック要素を段落として扱い、デフォルト段落間隔を付与する。`<pre><code>` でも同様。CSS制御不可。
 - **対応**: `<table>` 方式等の追加試行はせず、制約として受け入れ。Plain Text コピーでは空行は入らない。
 
+### テストで確認済みの未修正不具合（Phase 1 調査、2026-10-31）
+
+| # | 不具合 | 箇所 |
+|---|---|---|
+| 1 | 表が Clipboard HTML で `<table>` にならず、パイプ文字列の `<p>` になる。セル内書式も消える | `markdownToHtml.ts`（表処理なし） |
+| 2 | インラインコード内の `*` が `<em>` に変換される（`a * b * c`） | `markdownToHtml.ts` の `inlineToHtml` |
+| 3 | `***x***` → `<strong><em>x</strong></em>`（タグ入れ子崩れ）。`<del>` は書式が消える | 同上 / `htmlToMarkdown.ts` |
+| 4 | 見出し h4 と h5 がどちらも `#####` になる | `normalizeHeadings` |
+| 5 | `---` 区切り線は h1 がある場合しか入らない（見出しを下げた後に `## ` を探すため）。元の `<hr>` は削除される | `insertSectionDividers` |
+| 6 | 段落結合時に英文同士が空白なしで連結（`paragraph.This`）。`<br>` の改行も消える | `collapseTextParagraphs` |
+| 7 | `[aria-label]` 除去で本文要素（例: aria-label 付きリンク）まで消える | `extractConversation.ts` |
+| 8 | `<tag>` エスケープが「文書のそれ以降にバッククォートがあるか」で変わる（text/plain 側のみ影響） | `escapeForGoogleDocs` |
+| 9 | Conversation Log で Assistant 本文の h2 がターン見出しと同じ `###` になる | `formatConversationLog.ts` の `shiftAssistantHeadings` |
+| 10 | Knowledge Note で `**User:**` 行と直後の回答が `<br>` で連結、2つ目の回答が前の段落に結合される | `formatKnowledgeNote.ts` / `collapseTextParagraphs` |
+
+### リスト関連の残課題（Phase 2A 時点）
+
+- 親 ul/ol を含まない部分選択では単独 li が `•` 扱いになり、元の番号（`start` 属性）も引き継がない
+- li 内の2段落目以降はインデントなし通常段落になり、`collapseTextParagraphs` で直前項目に結合されることがある
+- li 内テキストに改行（整形HTML）が含まれると、後半が通常段落として分かれる
+
+### 未検証事項
+
+- fixture は実 ChatGPT DOM を模して手書きしたもので、実DOMからの取得ではない（li 内が `<p>` 包みか、aria-label の付き方など）
+- Google Docs への実際の貼り付け結果（NBSP 字下げ幅・`margin:0` の効き）
+
 ---
 
 ## 5. 現在のタスク / 次候補タスク
 
 優先順:
 
-1. **[高] DOMセレクター変更への対応確認**
-   - ChatGPT UIは頻繁に変更される
-   - `[data-message-author-role]` と `.markdown` / `[class*="prose"]` が現在も有効か確認
-   - 対象: `src/content/extractConversation.ts` の `SELECTORS` オブジェクト
-2. **[中] 主要関数のユニットテスト追加**
-   - `htmlToMarkdown`, `normalizeMarkdown`, `formatConversationLog`, `formatKnowledgeNote` は純粋関数
-   - Vitest 導入でテスト容易
-3. **[低] Knowledge Note トリビアルフィルターの英語対応**
+1. **[高] 実DOMの fixture 化**
+   - デバッグトレースの「1. Extracted HTML」を取得し `tests/fixtures/selection/` に追加（入れ子2階層以上・ol 内 ul・リスト途中からの選択・表・引用リンクなど）
+2. **[高] インライン書式の修正**（§4 #2, #3）: `inlineToHtml` でインラインコードを先にプレースホルダー退避、`***` 専用ルール
+3. **[中] 段落結合の修正**（§4 #6）: 英数字同士の結合時に半角スペース、`<br>` の扱いを仕様化
+4. **[中] 見出し・区切り線の仕様整理**（§4 #4, #5）
+5. **[中] 表の `<table>` 出力**（§4 #1、Google Docs で手動確認が必要）
+6. **[中] `[aria-label]` 除去の絞り込み**（§4 #7、実DOM確認後）
+7. **[高・継続] DOMセレクター変更への対応確認**（`SELECTORS` オブジェクト）
+8. **[低] Knowledge Note トリビアルフィルターの英語対応**
 
 ---
 
 ## 6. 重要な設計判断
 
 - **クリップボード戦略**: Promise-based `ClipboardItem` で `text/html` + `text/plain` を同時書き込み。`buildContent()` Promise を先行起動し `clipboard.write()` を handleCopy 最初の `await` として呼ぶことで user activation を保持する。失敗時はプレーンテキストにフォールバック（ステータスに「テキスト形式」と表示）
-- **コードブロック保護（NULLバイトプレースホルダー）**: Markdown正規化処理がコードブロック内を誤変換しないよう `\x00CODEBLOCK_N\x00` で置換保護する。全normalizer関数はこの前提で動く
-- **Google Docs向けリスト変換**: `markdownToHtml.ts` では `<ul><li>` を使わず `<p style="margin:0;">` + `•` 記号で出力。Google Docs で `<ul><li>` は「書式クリア」後にインデントが残る不具合回避
+- **コードブロック保護（NULLバイトプレースホルダー）**: Markdown正規化処理がコードブロック内を誤変換しないよう `\x00CODEBLOCK_N\x00` で置換保護する。全normalizer関数と `listItemToMarkdown` はこの前提で動く
+- **Google Docs向けリスト変換**: `markdownToHtml.ts` では `<ul><li>` を使わず `<p style="margin:0;">` + `•` 記号で出力。字下げは **NBSP（U+00A0）×4 / 階層**（全角スペースではない）。Google Docs で `<ul><li>` は「書式クリア」後にインデントが残る不具合回避
+- **リストのインデント規約**: Markdown 上は **2スペース / 階層**。リスト行判定は `listSyntax.ts` に集約し、htmlToMarkdown / normalizeIndent / formatSelection で同じ基準を使う。行頭空白除去は `(?![ \t])` で空白を最後まで消費させ、バックトラックを防ぐ
+- **部分選択時のリスト階層**: 子リストの途中から選択した場合は空の親項目を出さず、元の階層（字下げ）を維持する（`trimKeepingListIndent`）
 - **DOMセレクター集約**: `extractConversation.ts` の `SELECTORS` オブジェクト1箇所に集約
 - **Knowledge Noteのトリビアルフィルター**: 日本語の定型フレーズのみ対応
 - **`blockquote`**: `>` プレフィックスなしで内容だけ取り出す仕様
 - **Selection Copy のUI除去**: `cloneContents()` で取得した断片からボタン・SVG・aria-label 要素を除去してからHTMLパース
+- **テスト方針**: characterization test（現行動作の記録）と仕様テスト（正しい期待値）を分ける。修正で出力が変わったら `npm run test:update` → `git diff` でスナップショット差分を確認・説明する
+- **デバッグ出力**: Popup の DevTools コンソールのみ。外部送信・恒久保存はしない（localStorage には有効フラグのみ）
 
 ---
 
@@ -104,7 +141,7 @@
 
 ### 7-1. HTML→Markdown 変換（`htmlToMarkdown.ts`）
 
-ChatGPT DOM の HTML を Markdown テキストに変換する。content script 内で実行（DOM API 使用）。
+ChatGPT DOM の HTML を Markdown テキストに変換する（DOM API 使用、popup 内で実行）。
 
 | HTML要素 | Markdown出力 |
 |---|---|
@@ -114,8 +151,9 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 | `<em>`, `<i>` | `*text*` |
 | `<code>`（インライン） | `` `text` `` |
 | `<pre><code>` | ` ```lang\ncode\n``` ` + `\n\n` |
-| `<ul><li>` | `- item`（インデントレベル保持） |
-| `<ol><li>` | `1. item`（インデントレベル保持） |
+| `<ul><li>` | `- item`（2スペース/階層、`listItemToMarkdown`） |
+| `<ol><li>` | `1. item`（同上） |
+| 単独 `<li>`（部分選択） | `- item` |
 | `<a>` | `[text](href)` |
 | `<br>` | `\n` |
 | `<hr>` | `\n---\n\n` |
@@ -128,12 +166,12 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 | 関数 | 処理内容 |
 |---|---|
 | `normalizeBullets` | `- ` → `* ` に統一 |
-| `normalizeHeadings` | `#` → `##` に1段階下げ（Knowledge Note用） |
-| `normalizeIndent` | 行頭の不要スペース・タブ除去（ネストリストのインデントは保持） |
+| `normalizeHeadings` | `#`〜`####` を1段階下げ（`#####` 以上は据え置き → h4/h5 衝突） |
+| `normalizeIndent` | リスト行以外の行頭スペース・タブを除去（`NON_LIST_INDENT`） |
 | `replaceDoubleQuotes` | `"text"` → `「text」`（U+201C/201D → 日本語括弧） |
-| `escapeForGoogleDocs` | `<tag>` をエスケープ（インラインコード外のみ） |
-| `insertSectionDividers` | `##` 見出し間に `---` 挿入 |
-| `collapseTextParagraphs` | 連続する通常テキスト段落を1行に結合（Knowledge Note用） |
+| `escapeForGoogleDocs` | `<tag>` をエスケープ（`markdownToHtml` で戻されるため text/plain 側のみ有効） |
+| `insertSectionDividers` | `## ` 見出しの前に `---` 挿入（既存 `---` は削除） |
+| `collapseTextParagraphs` | 連続する通常テキスト段落を空白なしで1行に結合 |
 
 ### 7-3. Markdown→HTML 変換（`markdownToHtml.ts`）
 
@@ -141,17 +179,18 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 
 | Markdown要素 | HTML出力 | Google Docs 備考 |
 |---|---|---|
-| 通常テキスト | `<p>content</p>` | — |
+| 通常テキスト | `<p>content</p>`（連続行は `<br>` 区切り） | — |
 | `**text**` | `<strong>text</strong>` | bold 表示 |
-| `*text*` | `<em>text</em>` | italic 表示 |
+| `*text*` | `<em>text</em>` | italic 表示（インラインコード内でも変換される不具合あり） |
 | `` `code` `` | `<code>code</code>` | インラインコード体裁 |
 | ` ```lang\ncode\n``` ` | `<pre><code class="language-lang">...</code></pre>` | **各行に段落間隔が入る（制約・受け入れ済み）** |
 | `# 〜 ######` | `<h1>`〜`<h6>` | 見出しスタイル |
-| `* item` / `- item` | `<p style="margin:0;">•&nbsp;item</p>` | `<ul><li>` 不使用（書式クリア後のインデント残留回避） |
-| `1. item` | `<p style="margin:0;">1.&nbsp;item</p>` | `<ol><li>` 不使用（同上） |
+| `* item` / `- item` | `<p style="margin:0;">` + NBSP×4×階層 + `•&nbsp;item` | 階層 = 行頭空白数 / 2 |
+| `1. item` | `<p style="margin:0;">` + NBSP×4×階層 + `1.&nbsp;item` | 同上 |
 | `---` | `<hr>` | 水平線 |
-| `> text` | `<blockquote><p>text</p></blockquote>` | — |
+| `> text` | `<blockquote><p>text</p></blockquote>` | 現在の出力経路では未使用 |
 | `[text](url)` | `<a href="url">text</a>` | ハイパーリンク |
+| 表 | （未対応）パイプ文字列の `<p>` | §4 #1 |
 
 ### 7-4. モード別フォーマット仕様
 
@@ -169,18 +208,13 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 ```
 
 適用normalizer: `normalizeBullets` → `normalizeIndent` → `replaceDoubleQuotes` → `escapeForGoogleDocs`
-※ Assistantの見出しは `shiftAssistantHeadings` で1段階下げ（`###` ターン見出しとの衝突回避）
+※ Assistantの見出しは `shiftAssistantHeadings` で1段階下げるが、h2 → `###` でターン見出しと衝突する（§4 #9）
 
 #### Knowledge Note（`formatKnowledgeNote.ts`）
 
 ```
 **User:** ユーザー発言（非トリビアルのみ）
-
 アシスタント回答本文
-
----
-
-## 次のセクション見出し
 ...
 ```
 
@@ -189,7 +223,7 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 
 #### Selection Copy（`formatSelection.ts`）
 
-選択範囲のHTMLをそのまま変換。ターン構造なし。Knowledge Note と同じ normalizer パイプラインを適用。
+選択範囲のHTMLをそのまま変換。ターン構造なし。Knowledge Note と同じ normalizer パイプラインを適用し、最後に `trimKeepingListIndent`。
 
 適用normalizer: `normalizeHeadings` → `normalizeBullets` → `normalizeIndent` → `replaceDoubleQuotes` → `escapeForGoogleDocs` → `insertSectionDividers` → `collapseTextParagraphs`
 
@@ -200,9 +234,11 @@ ChatGPT DOM の HTML を Markdown テキストに変換する。content script �
 | リスク | 詳細 | 対処 |
 |--------|------|------|
 | **[高] DOMセレクター破損** | ChatGPT UI変更で `[data-message-author-role]` や `.markdown` が消えると全機能停止 | `SELECTORS` オブジェクトを更新 |
+| **[高] fixture と実DOMの乖離** | テスト fixture は手書きの近似。実DOM構造が異なると、テストが通っても実環境で崩れうる | デバッグトレースで実DOMを取得し fixture 化 |
 | **[高] Google Docs コードブロック空行** | Google Docs の段落間隔が HTML ペースト時にコード各行に付く。CSS での制御不可 | 制約として受け入れ済み（Plain Text コピーで回避可） |
-| **[中] `collapseTextParagraphs` の複雑性** | `normalizeMarkdown.ts` の170行ロジック。AI修正時に改行処理の挙動が変わりやすい | 変更前にエッジケースをテストで固める |
-| **[低] `escapeForGoogleDocs` の `<tag>` エスケープ** | インラインコード内の `<tag>` を除外する正規表現が簡易版 | 実害は限定的 |
+| **[中] `collapseTextParagraphs` の複雑性** | 改行処理の挙動が変わりやすい | 変更前後でスナップショット差分を確認 |
+| **[中] 共通 normalizer の波及** | `normalizeMarkdown.ts` / `htmlToMarkdown.ts` / `listSyntax.ts` の修正は3モードすべてに影響 | `tests/conversationModes.test.ts` で回帰検知 |
+| **[低] `escapeForGoogleDocs` の `<tag>` エスケープ** | 正規表現が簡易版で、後続のバッククォート有無に依存 | 実害は限定的（text/plain のみ） |
 | **触らない箇所** | `protectCodeBlocks.ts`（全normalizerの前提）、`conversation.ts`（型契約） | 変更は全フォーマッターに影響 |
 
 ---
@@ -220,26 +256,39 @@ CopyChatGPT/
 │   │   ├── contentScript.ts       # content scriptエントリー（メッセージ受信→抽出呼び出し）
 │   │   └── extractConversation.ts # ChatGPT DOMから会話抽出 + 選択範囲抽出（SELECTORSオブジェクト集約）
 │   ├── formatter/
-│   │   ├── htmlToMarkdown.ts      # HTML→Markdown（DOMトラバーサル、popup内で実行）
+│   │   ├── htmlToMarkdown.ts      # HTML→Markdown（DOMトラバーサル、listItemToMarkdown）
 │   │   ├── markdownToHtml.ts      # Markdown→HTML（ClipboardItem用、popup.tsから呼ばれる）
 │   │   ├── normalizeMarkdown.ts   # Markdown正規化群（見出し/箇条書き/段落/エスケープ）
+│   │   ├── listSyntax.ts          # リスト行判定の集約（LIST_MARKER / NON_LIST_INDENT / trimKeepingListIndent）
 │   │   ├── protectCodeBlocks.ts   # コードブロック保護/復元（全normalizerの前提・触らない）
 │   │   ├── formatConversationLog.ts # モード1: 全会話ターン形式
 │   │   ├── formatKnowledgeNote.ts   # モード2: アシスタント中心のノート形式
-│   │   └── formatSelection.ts       # モード3: 選択範囲をそのまま変換
+│   │   └── formatSelection.ts       # モード3: 選択範囲を変換（任意の段階トレース付き）
+│   ├── debug/
+│   │   └── selectionDebug.ts      # Copy Selection デバッグ出力（localStorage "ccg:debug" で有効化）
 │   ├── clipboard/
 │   │   └── copyToClipboard.ts     # ※現在popup.tsから未使用。将来の再利用のために残存
 │   └── popup/
 │       ├── popup.html             # Popup UI（ボタン3種 + ステータス表示）
 │       ├── popup.ts               # Popupロジック（Promise-based ClipboardItem + フォールバック）
 │       └── popup.css              # ダークテーマスタイル（btn-primary/secondary/tertiary）
+├── tests/
+│   ├── helpers.ts                 # 全体選択→抽出、本番同順のパイプライン実行
+│   ├── fixtures/selection/*.html  # Copy Selection 入力 fixture（手書きの近似）
+│   ├── __snapshots__/             # characterization スナップショット（selection/ は段階別ファイル）
+│   ├── selection.fixtures.test.ts # fixture 一括 characterization + tracer 不変性
+│   ├── selection.partial.test.ts  # 部分選択の characterization
+│   ├── stages.test.ts             # 不具合の段階別切り分け記録
+│   ├── conversationModes.test.ts  # Conversation Log / Knowledge Note 回帰
+│   └── nestedList.test.ts         # 入れ子リスト仕様テスト（正しい期待値）
 ├── PROJECT_CONTEXT.md             # このファイル
 ├── vite.config.ts                 # ビルド設定（popup + contentScript 2エントリー）
+├── vitest.config.ts               # テスト設定（jsdom）
 ├── tsconfig.json
-├── package.json                   # scripts: dev（watch）/ build
-└── dist/                          # ビルド済み成果物（Chromeに読み込む）
+├── package.json                   # scripts: dev / build / test / test:watch / test:update
+└── dist/                          # ビルド成果物（Chromeに読み込む・git管理外）
 ```
 
 ---
 
-*最終更新: 2026-05-24（Selection Copy 追加・Knowledge Note と同一 normalizer パイプラインに統一、Bug A/B 修正残骸クリーンアップ、スタイリング仕様を7節に追加）*
+*最終更新: 2026-10-31（Phase 1: Git・テスト基盤・デバッグトレース追加 / Phase 2A: 入れ子リストの階層保持を修正、listSyntax.ts 新設、既知不具合一覧を §4 に追加）*
