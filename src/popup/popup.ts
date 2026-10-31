@@ -3,6 +3,7 @@ import { formatConversationLog } from "../formatter/formatConversationLog";
 import { formatKnowledgeNote } from "../formatter/formatKnowledgeNote";
 import { formatSelection } from "../formatter/formatSelection";
 import { markdownToHtml } from "../formatter/markdownToHtml";
+import { isDebugEnabled, logSelectionDebug } from "../debug/selectionDebug";
 
 type StatusType = "idle" | "loading" | "success" | "error";
 
@@ -60,8 +61,14 @@ async function buildContent(mode: CopyMode): Promise<{ markdown: string; html: s
 
   if (mode === "selectionCopy") {
     if (!result.selectionHtml) throw new Error("選択範囲を取得できませんでした");
-    const markdown = formatSelection(result.selectionHtml);
+    const debug = isDebugEnabled();
+    const stages: [string, string][] = [];
+    const markdown = formatSelection(
+      result.selectionHtml,
+      debug ? (stage, value) => stages.push([stage, value]) : undefined
+    );
     const html = markdownToHtml(markdown);
+    if (debug) logSelectionDebug(result.selectionHtml, stages, html);
     return { markdown, html, modeLabel: "Selection", msgCount: 0 };
   }
 

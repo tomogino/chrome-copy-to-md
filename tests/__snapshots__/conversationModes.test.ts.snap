@@ -1,0 +1,92 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Conversation modes characterization > Conversation Log > clipboard html 1`] = `
+"<html><body><h2>Conversation Log</h2>
+<h3>01｜User</h3>
+<p>Reactの状態管理を教えて</p>
+<h3>01｜Assistant</h3>
+<p>概要です。</p>
+<h3>useState</h3>
+<p>基本のフックです。</p>
+<p style="margin:0;">• 単純</p>
+<p style="margin:0;">• 局所的</p>
+<h4>例</h4>
+<pre><code class="language-ts">const [a, setA] = useState(0);</code></pre>
+<h3>Redux</h3>
+<p>グローバルな状態です。</p>
+<h3>02｜User</h3>
+<p>なるほど</p>
+<h3>02｜Assistant</h3>
+<p>他にも質問があればどうぞ。</p></body></html>"
+`;
+
+exports[`Conversation modes characterization > Conversation Log > markdown 1`] = `
+"## Conversation Log
+
+### 01｜User
+
+Reactの状態管理を教えて
+
+### 01｜Assistant
+
+概要です。
+
+### useState
+
+基本のフックです。
+
+* 単純
+* 局所的
+
+#### 例
+
+\`\`\`ts
+const [a, setA] = useState(0);
+\`\`\`
+
+### Redux
+
+グローバルな状態です。
+
+### 02｜User
+
+なるほど
+
+### 02｜Assistant
+
+他にも質問があればどうぞ。"
+`;
+
+exports[`Conversation modes characterization > Knowledge Note > clipboard html 1`] = `
+"<html><body><p><strong>User:</strong> Reactの状態管理を教えて<br>概要です。</p>
+<h3>useState</h3>
+<p>基本のフックです。</p>
+<p style="margin:0;">• 単純</p>
+<p style="margin:0;">• 局所的</p>
+<h4>例</h4>
+<pre><code class="language-ts">const [a, setA] = useState(0);</code></pre>
+<h3>Redux</h3>
+<p>グローバルな状態です。他にも質問があればどうぞ。</p></body></html>"
+`;
+
+exports[`Conversation modes characterization > Knowledge Note > markdown 1`] = `
+"**User:** Reactの状態管理を教えて
+概要です。
+
+### useState
+
+基本のフックです。
+
+* 単純
+* 局所的
+
+#### 例
+
+\`\`\`ts
+const [a, setA] = useState(0);
+\`\`\`
+
+### Redux
+
+グローバルな状態です。他にも質問があればどうぞ。"
+`;

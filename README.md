@@ -89,3 +89,26 @@ const SELECTORS = {
 - Markdown整形関数は純粋関数として実装しているので、単体テストが容易
 - コードブロック保護は `protectCodeBlocks()` / `restoreCodeBlocks()` のペアで実装
 - 将来的に「表→リスト変換」オプションを追加する場合は `formatKnowledgeNote.ts` を拡張する
+
+## テスト
+
+```bash
+npm test             # 回帰テスト（Vitest + jsdom）
+npm run test:update  # 変換結果が意図通り変わったときにスナップショットを更新
+```
+
+- `tests/fixtures/selection/*.html` を追加すると、Copy Selection の各段階の出力が
+  `tests/__snapshots__/selection/` に記録される（`1-extracted.html` / `2-markdown.md` / `3-clipboard.html`）
+- 現在のスナップショットは「現行動作の記録」であり、正しい期待値とは限らない。修正時は `git diff` で前後比較する
+
+## デバッグ（Copy Selection）
+
+Popup を右クリック →「検証」で開いた DevTools コンソールで以下を実行すると、
+次回以降の Copy Selection で Extracted HTML / Markdown 各段階 / Clipboard HTML がコンソールに出力される。
+
+```js
+localStorage.setItem("ccg:debug", "1")   // 有効化
+localStorage.removeItem("ccg:debug")     // 無効化
+```
+
+出力先は Popup のコンソールのみで、外部送信や保存は行わない。
