@@ -1,14 +1,16 @@
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
 import { NON_LIST_INDENT } from "./listSyntax";
+import { mapInlineText } from "./inlineSyntax";
 
 /**
  * 見出しを ## 始まりに正規化する（コードブロック外のみ）
- * # → ##, ## → ###, ### → ####, #### → #####
+ * # → ##, ## → ###, ### → ####, #### → #####, ##### → ######
+ * （###### は上限のため据え置き。h5 と h6 は同じ ###### になる）
  */
 export function normalizeHeadings(markdown: string): string {
   const { protected: safe, store } = protectCodeBlocks(markdown);
 
-  const normalized = safe.replace(/^(#{1,4}) /gm, (_, hashes: string) => {
+  const normalized = safe.replace(/^(#{1,5}) /gm, (_, hashes: string) => {
     return "#".repeat(hashes.length + 1) + " ";
   });
 
@@ -67,14 +69,8 @@ export function normalizeBullets(markdown: string): string {
 export function escapeForGoogleDocs(markdown: string): string {
   const { protected: safe, store } = protectCodeBlocks(markdown);
 
-  let escaped = safe;
-
-  // <...> をエスケープ（URLやインラインコード外）
-  escaped = escaped.replace(/(?<!`[^`]*)(<)([^>]+)(>)(?![^`]*`)/g, "\\<$2\\>");
-
-  // インラインコードを保護してから処理済みのものを戻す（簡易版: インラインコードは除外）
-  // ※ 行中の `code` 内は変換しない（バッククォートで囲まれた部分を保護）
-  escaped = escaped.replace(/`[^`]+`/g, (match) => match); // no-op: すでに保護外
+  // <...> をエスケープ（インラインコード・数式の中は対象外）
+  const escaped = mapInlineText(safe, (text) => text.replace(/<([^<>\n]+)>/g, "\\<$1\\>"));
 
   return restoreCodeBlocks(escaped, store);
 }
@@ -102,76 +98,6 @@ export function replaceDoubleQuotes(markdown: string): string {
   const normalized = safe.replace(/\u201c([^\u201d]*)\u201d/g, "「$1」");
 
   return restoreCodeBlocks(normalized, store);
-}
-
-/** 構造行（見出し・リスト・区切り等）かどうか判定する */
-function isStructuralLine(line: string): boolean {
-  return (
-    line === "" ||
-    /^#{1,6} /.test(line) ||
-    /^\s*[*\-] /.test(line) ||
-    /^\s*\d+[\.\)] /.test(line) ||
-    /^\s*---\s*$/.test(line) ||
-    line.startsWith("|") ||
-    line.startsWith("```") ||
-    line.startsWith("\x00") || // コードブロックプレースホルダー
-    line.startsWith("**User:**")
-  );
-}
-
-/**
- * 通常テキスト段落同士の改行・空行を除去して1行に結合する（コードブロック外のみ）
- *
- * - 見出し・リスト・--- の前後の空行は保持する
- * - 連続する通常テキスト行はそのまま結合する（改行なし）
- * - 通常テキスト間の空行も除去して結合する
- */
-export function collapseTextParagraphs(markdown: string): string {
-  const { protected: safe, store } = protectCodeBlocks(markdown);
-  const lines = safe.split("\n");
-  const acc: string[] = [];
-
-  for (const line of lines) {
-    if (acc.length === 0) {
-      acc.push(line);
-      continue;
-    }
-
-    const prev = acc[acc.length - 1];
-
-    // 空行: そのまま積む
-    if (line === "") {
-      acc.push(line);
-      continue;
-    }
-
-    // 現在行が構造行: そのまま積む
-    if (isStructuralLine(line)) {
-      acc.push(line);
-      continue;
-    }
-
-    // 現在行が通常テキスト
-    if (prev === "") {
-      // 直前が空行 → その前の行を確認
-      const prevPrev = acc.length >= 2 ? acc[acc.length - 2] : "";
-      if (!isStructuralLine(prevPrev) && prevPrev !== "") {
-        // 空行の前も通常テキスト → 空行を除去して結合
-        acc.pop();
-        acc[acc.length - 1] += line;
-      } else {
-        // 空行の前が構造行 or 先頭 → 空行は保持してテキストを追加
-        acc.push(line);
-      }
-    } else if (!isStructuralLine(prev)) {
-      // 直前も通常テキスト → 改行なしで結合
-      acc[acc.length - 1] += line;
-    } else {
-      acc.push(line);
-    }
-  }
-
-  return restoreCodeBlocks(acc.join("\n"), store);
 }
 
 /**

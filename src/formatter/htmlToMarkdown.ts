@@ -1,9 +1,10 @@
 /**
  * ChatGPT のHTML出力をMarkdownテキストに変換する。
- * DOM APIを使うため content script 内でのみ動作する。
+ * DOM APIを使うため DOM のある環境（popup）で動作する。
  */
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
 import { LIST_MARKER, NON_LIST_INDENT, startsWithIndentedListLine, trimKeepingListIndent } from "./listSyntax";
+import { codeSpan, encodeLinkDestination, escapeMarkdownText } from "./inlineSyntax";
 
 function getIndent(level: number): string {
   return "  ".repeat(level);
@@ -31,13 +32,58 @@ function extractCodeText(el: Element): string {
   return result;
 }
 
+const INLINE_TAGS = new Set([
+  "a", "abbr", "b", "cite", "code", "del", "dfn", "em", "i", "img", "ins", "kbd",
+  "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var",
+]);
+
+function isWhitespaceText(node: Node | null): boolean {
+  return node?.nodeType === Node.TEXT_NODE && /^\s*$/.test(node.textContent || "");
+}
+
+/** テキストノード、またはインライン要素か */
+function isInlineNode(node: Node | null): boolean {
+  if (!node) return false;
+  if (node.nodeType === Node.TEXT_NODE) return true;
+  return node.nodeType === Node.ELEMENT_NODE && INLINE_TAGS.has((node as Element).tagName.toLowerCase());
+}
+
+/** ノードの先頭が Markdown の行頭に来るか（見出し・li・セルの中は記号の後ろなので行頭ではない） */
+function startsLine(node: Node): boolean {
+  let prev = node.previousSibling;
+  while (isWhitespaceText(prev)) prev = prev!.previousSibling;
+  if (prev) return !isInlineNode(prev);
+  const parent = node.parentElement;
+  if (!parent) return true;
+  const tag = parent.tagName.toLowerCase();
+  if (INLINE_TAGS.has(tag)) return startsLine(parent);
+  return !/^(h[1-6]|li|td|th)$/.test(tag);
+}
+
+/** KaTeX 要素から TeX ソースを取り出す（表示用・読み上げ用テキストの重複出力を防ぐ） */
+function katexSource(el: Element): string | null {
+  const tex = el.querySelector('annotation[encoding="application/x-tex"]')?.textContent;
+  return tex ? tex.trim().replace(/\s*\n\s*/g, " ") : null;
+}
+
+/**
+ * 強調記号で囲む。前後の空白は記号の外に出す（"** a**" は強調として解釈されないため）
+ */
+function wrapInline(inner: string, marker: string): string {
+  const [, lead, core, trail] = inner.match(/^(\s*)([\s\S]*?)(\s*)$/)!;
+  return core ? `${lead}${marker}${core}${marker}${trail}` : inner;
+}
+
 function nodeToMarkdown(node: Node, listLevel = 0): string {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || "";
-    // 空白のみのテキストノード（HTMLの整形インデント）は除去する
-    // これがあると行頭にスペースが入り Google Docs がblockquoteとして解釈する
-    if (/^\s+$/.test(text)) return "";
-    return text;
+    if (/^\s+$/.test(text)) {
+      // 空白のみのテキストノードは、インライン要素同士の間なら単語区切りとして残し、
+      // それ以外（HTMLの整形インデント）は除去する。
+      // 行頭にスペースが入ると Google Docs がblockquoteとして解釈するため
+      return isInlineNode(node.previousSibling) && isInlineNode(node.nextSibling) ? " " : "";
+    }
+    return escapeMarkdownText(text, startsLine(node));
   }
 
   if (node.nodeType !== Node.ELEMENT_NODE) return "";
@@ -45,6 +91,13 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
   const children = Array.from(el.childNodes);
+
+  if (el.classList.contains("katex-display") || el.classList.contains("katex")) {
+    const tex = katexSource(el);
+    if (tex !== null) {
+      return el.classList.contains("katex-display") ? `\n$$${tex}$$\n\n` : `$${tex}$`;
+    }
+  }
 
   switch (tag) {
     case "p": {
@@ -68,22 +121,18 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
       return `\n###### ${children.map((c) => nodeToMarkdown(c)).join("").trim()}\n\n`;
 
     case "strong":
-    case "b": {
-      const inner = children.map((c) => nodeToMarkdown(c)).join("");
-      return `**${inner}**`;
-    }
+    case "b":
+      return wrapInline(children.map((c) => nodeToMarkdown(c)).join(""), "**");
 
     case "em":
-    case "i": {
-      const inner = children.map((c) => nodeToMarkdown(c)).join("");
-      return `*${inner}*`;
-    }
+    case "i":
+      return wrapInline(children.map((c) => nodeToMarkdown(c)).join(""), "*");
 
     case "code": {
       if (el.parentElement?.tagName.toLowerCase() === "pre") {
         return el.textContent || "";
       }
-      return `\`${el.textContent || ""}\``;
+      return codeSpan((el.textContent || "").replace(/\n/g, " "));
     }
 
     case "pre": {
@@ -123,7 +172,7 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
     case "a": {
       const href = el.getAttribute("href") || "";
       const text = children.map((c) => nodeToMarkdown(c)).join("");
-      return href ? `[${text}](${href})` : text;
+      return href ? `[${text}](${encodeLinkDestination(href)})` : text;
     }
 
     case "table":
@@ -183,7 +232,9 @@ function tableToMarkdown(table: Element): string {
 
   rows.forEach((row, rowIndex) => {
     const cells = Array.from(row.querySelectorAll("td, th")).map((cell) => {
-      return (cell.textContent || "").trim().replace(/\|/g, "\\|");
+      const inner = Array.from(cell.childNodes).map((c) => nodeToMarkdown(c)).join("");
+      // セル内の改行（<p> や <br>）は1行に収め、区切り文字 | をエスケープする
+      return inner.trim().replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
     });
     lines.push(`| ${cells.join(" | ")} |`);
 
@@ -192,7 +243,7 @@ function tableToMarkdown(table: Element): string {
     }
   });
 
-  return lines.join("\n") + "\n\n";
+  return "\n" + lines.join("\n") + "\n\n";
 }
 
 /**

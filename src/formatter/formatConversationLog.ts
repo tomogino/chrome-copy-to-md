@@ -2,6 +2,7 @@ import type { Conversation } from "../types/conversation";
 import { htmlToMarkdown } from "./htmlToMarkdown";
 import { normalizeBullets, normalizeIndent, replaceDoubleQuotes, escapeForGoogleDocs } from "./normalizeMarkdown";
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
+import { escapeMarkdownText } from "./inlineSyntax";
 
 /**
  * Assistant本文内の見出しを1段階下げる
@@ -39,7 +40,7 @@ export function formatConversationLog(conversation: Conversation): string {
     parts.push(label, "");
 
     // HTMLがあればHTMLから変換、なければtextをそのまま使う
-    let body = msg.html ? htmlToMarkdown(msg.html) : msg.text;
+    let body = msg.html ? htmlToMarkdown(msg.html) : escapeMarkdownText(msg.text, true);
 
     if (msg.role === "assistant") {
       // Assistantの見出しを1段階下げる（### ターン見出しとの衝突を回避）

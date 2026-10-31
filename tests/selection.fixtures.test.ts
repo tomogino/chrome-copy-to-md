@@ -41,7 +41,7 @@ describe("formatSelection tracer", () => {
       const extractedHtml = extractFromHtml(readFileSync(join(FIXTURE_DIR, file), "utf8"));
       const stages: string[] = [];
       expect(formatSelection(extractedHtml, (stage) => stages.push(stage))).toBe(formatSelection(extractedHtml));
-      expect(stages).toHaveLength(8);
+      expect(stages).toHaveLength(7);
     }
   });
 });

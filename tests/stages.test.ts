@@ -15,11 +15,11 @@ describe("htmlToMarkdown", () => {
 });
 
 describe("normalizeHeadings", () => {
-  it("h4/h5 の衝突", () => {
+  it("見出しレベル（h4/h5 は区別、h5/h6 は同じ）", () => {
     expect(normalizeHeadings("#### h4\n\n##### h5\n\n###### h6")).toMatchInlineSnapshot(`
       "##### h4
 
-      ##### h5
+      ###### h5
 
       ###### h6"
     `);
@@ -27,13 +27,13 @@ describe("normalizeHeadings", () => {
 });
 
 describe("escapeForGoogleDocs", () => {
-  it("後続行にバッククォートがあるかで <tag> のエスケープ結果が変わる", () => {
+  it("<tag> のエスケープは後続行のバッククォートに左右されない", () => {
     expect({
       noBacktickAfter: escapeForGoogleDocs("a <div> b"),
       backtickInLaterLine: escapeForGoogleDocs("a <div> b\n\n`code`"),
     }).toMatchInlineSnapshot(`
       {
-        "backtickInLaterLine": "a <div> b
+        "backtickInLaterLine": "a \\<div\\> b
 
       \`code\`",
         "noBacktickAfter": "a \\<div\\> b",
@@ -43,12 +43,12 @@ describe("escapeForGoogleDocs", () => {
 });
 
 describe("markdownToHtml", () => {
-  it("インラインコード内の * が <em> に変換される", () => {
-    expect(markdownToHtml("`a * b * c`")).toMatchInlineSnapshot(`"<html><body><p><code>a <em> b </em> c</code></p></body></html>"`);
+  it("インラインコード内の * は変換しない", () => {
+    expect(markdownToHtml("`a * b * c`")).toMatchInlineSnapshot(`"<html><body><p><code>a * b * c</code></p></body></html>"`);
   });
 
   it("***太字斜体*** のタグ入れ子", () => {
-    expect(markdownToHtml("***x***")).toMatchInlineSnapshot(`"<html><body><p><strong><em>x</strong></em></p></body></html>"`);
+    expect(markdownToHtml("***x***")).toMatchInlineSnapshot(`"<html><body><p><strong><em>x</em></strong></p></body></html>"`);
   });
 
   it("入れ子リストのインデント幅（2スペース単位）", () => {

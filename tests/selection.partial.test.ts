@@ -40,10 +40,13 @@ describe("Copy Selection characterization (partial ranges)", () => {
     // 「文章です。」から二つ目の段落末尾まで
     expect(select("前半の文章です。", 3, "二つ目の段落です。", 9)).toMatchInlineSnapshot(`
       {
-        "clipboardHtml": "<html><body><p>文章です。<strong>太字部分</strong>後半の文章です。二つ目の段落です。</p></body></html>",
+        "clipboardHtml": "<html><body><p>文章です。<strong>太字部分</strong>後半の文章です。</p>
+      <p>二つ目の段落です。</p></body></html>",
         "extractedHtml": "<p>文章です。<strong>太字部分</strong>後半の文章です。</p>
       <p>二つ目の段落です。</p>",
-        "markdown": "文章です。**太字部分**後半の文章です。二つ目の段落です。",
+        "markdown": "文章です。**太字部分**後半の文章です。
+
+      二つ目の段落です。",
       }
     `);
   });

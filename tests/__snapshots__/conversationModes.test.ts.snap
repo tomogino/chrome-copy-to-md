@@ -58,7 +58,8 @@ const [a, setA] = useState(0);
 `;
 
 exports[`Conversation modes characterization > Knowledge Note > clipboard html 1`] = `
-"<html><body><p><strong>User:</strong> Reactの状態管理を教えて<br>概要です。</p>
+"<html><body><p><strong>User:</strong> Reactの状態管理を教えて</p>
+<p>概要です。</p>
 <h3>useState</h3>
 <p>基本のフックです。</p>
 <p style="margin:0;">• 単純</p>
@@ -66,11 +67,13 @@ exports[`Conversation modes characterization > Knowledge Note > clipboard html 1
 <h4>例</h4>
 <pre><code class="language-ts">const [a, setA] = useState(0);</code></pre>
 <h3>Redux</h3>
-<p>グローバルな状態です。他にも質問があればどうぞ。</p></body></html>"
+<p>グローバルな状態です。</p>
+<p>他にも質問があればどうぞ。</p></body></html>"
 `;
 
 exports[`Conversation modes characterization > Knowledge Note > markdown 1`] = `
 "**User:** Reactの状態管理を教えて
+
 概要です。
 
 ### useState
@@ -88,5 +91,7 @@ const [a, setA] = useState(0);
 
 ### Redux
 
-グローバルな状態です。他にも質問があればどうぞ。"
+グローバルな状態です。
+
+他にも質問があればどうぞ。"
 `;

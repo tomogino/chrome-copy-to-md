@@ -7,8 +7,8 @@ import {
   replaceDoubleQuotes,
   insertSectionDividers,
   escapeForGoogleDocs,
-  collapseTextParagraphs,
 } from "./normalizeMarkdown";
+import { escapeMarkdownText } from "./inlineSyntax";
 
 /**
  * 内容の薄い短いUser発言を除外するパターン
@@ -41,11 +41,11 @@ export function formatKnowledgeNote(conversation: Conversation): string {
       if (isTrivialUserMessage(msg.text)) continue;
 
       // > blockquote ではなく **User:** ラベルとして残す
-      parts.push(`**User:** ${msg.text.trim()}`);
+      parts.push(`**User:** ${escapeMarkdownText(msg.text.trim(), false)}`);
       continue;
     }
 
-    let body = msg.html ? htmlToMarkdown(msg.html) : msg.text;
+    let body = msg.html ? htmlToMarkdown(msg.html) : escapeMarkdownText(msg.text, true);
 
     body = normalizeHeadings(body);
     body = normalizeBullets(body);
@@ -56,9 +56,9 @@ export function formatKnowledgeNote(conversation: Conversation): string {
     parts.push(body.trim());
   }
 
-  let result = parts.join("\n").replace(/\n{3,}/g, "\n\n");
+  // 発言・回答は段落として分ける（1行の改行だと直前の段落に <br> で連結される）
+  let result = parts.join("\n\n").replace(/\n{3,}/g, "\n\n");
   result = insertSectionDividers(result);
-  result = collapseTextParagraphs(result);
 
   return result.trim();
 }

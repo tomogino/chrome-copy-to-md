@@ -6,7 +6,6 @@ import {
   replaceDoubleQuotes,
   escapeForGoogleDocs,
   insertSectionDividers,
-  collapseTextParagraphs,
 } from "./normalizeMarkdown";
 import { trimKeepingListIndent } from "./listSyntax";
 
@@ -31,7 +30,5 @@ export function formatSelection(html: string, trace?: StageTracer): string {
   trace?.("escapeForGoogleDocs", body);
   body = insertSectionDividers(body);
   trace?.("insertSectionDividers", body);
-  body = collapseTextParagraphs(body);
-  trace?.("collapseTextParagraphs", body);
   return trimKeepingListIndent(body);
 }
