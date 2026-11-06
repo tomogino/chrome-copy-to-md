@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "description": "ChatGPTの会話をMarkdownでエクスポートするChrome拡張",
   "scripts": {
-    "dev": "vite build --watch",
-    "build": "vite build",
+    "dev": "npm run build && (vite build --watch & vite build --config vite.content.config.ts --watch)",
+    "build": "vite build && vite build --config vite.content.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:update": "vitest run -u"
