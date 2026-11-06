@@ -4,7 +4,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { Conversation } from "../src/types/conversation";
-import { extractFromHtml, runSelectionPipeline } from "./helpers";
+import { extractFromHtml, runSelectionPipeline, selectRange } from "./helpers";
+import { extractSelection } from "../src/content/extractConversation";
 import { formatConversationLog } from "../src/formatter/formatConversationLog";
 import { formatKnowledgeNote } from "../src/formatter/formatKnowledgeNote";
 import { markdownToHtml } from "../src/formatter/markdownToHtml";
@@ -168,5 +169,52 @@ describe("文字が変わらない", () => {
     expect(body(markdownToHtml(formatConversationLog(conversation)))).toBe(
       "<h2>Conversation Log</h2>\n<h3>01｜User</h3>\n<p># 見出しではない<br>- 箇条書きではない<br>*注*</p>"
     );
+  });
+});
+
+describe("コードブロック", () => {
+  const LABEL = '<div class="flex items-center"><div>プレーンテキスト</div><div><button aria-label="コピーする">コピーする</button></div></div>';
+  const LINES = ["Text/Primary", "Text/Secondary", "Text/Tertiary", "Text/Inverse"];
+  const EXPECTED_MD = "```\nText/Primary\nText/Secondary\nText/Tertiary\nText/Inverse\n```\n\nなどに分けます。";
+  const EXPECTED_HTML =
+    "<pre><code>Text/Primary\nText/Secondary\nText/Tertiary\nText/Inverse</code></pre>\n<p>などに分けます。</p>";
+  const AFTER = "<p>などに分けます。</p>";
+
+  const structures: [string, string][] = [
+    ["<pre> なし・span と改行", `<div>${LABEL}<div class="cm-content">${LINES.map((l) => `<span>${l}</span>`).join("\n")}</div></div>`],
+    ["<pre> なし・span と <br>", `<div>${LABEL}<div id="code-block-viewer" class="cm-editor"><div class="cm-scroller"><div class="cm-content">${LINES.map((l) => `<span>${l}</span>`).join("<br>")}</div></div></div></div>`],
+    ["<pre> あり・<code> なし・cm-line", `<pre><div>${LABEL}<div class="cm-editor"><div class="cm-content">${LINES.map((l) => `<div class="cm-line">${l}</div>`).join("")}</div></div></div></pre>`],
+    ["<pre> あり・<code> 内を div で改行", `<pre><div>${LABEL}<code>${LINES.map((l) => `<div>${l}</div>`).join("")}</code></div></pre>`],
+  ];
+
+  for (const [name, html] of structures) {
+    it(`言語ラベルを出さず、改行を維持する: ${name}`, () => {
+      const result = convert(html + AFTER);
+      expect(result.markdown).toBe(EXPECTED_MD);
+      expect(result.html).toBe(EXPECTED_HTML);
+    });
+  }
+
+  it("行番号はコードに含めない", () => {
+    const html = `<div class="cm-editor"><div class="cm-gutters">123</div><div class="cm-content"><div class="cm-line">a</div><div class="cm-line">b</div></div></div>`;
+    expect(convert(html).markdown).toBe("```\na\nb\n```");
+  });
+
+  it("コードブロックの直前の本文段落はラベル扱いしない", () => {
+    const html = `<p>短い説明</p><div class="cm-content"><span>a</span></div>`;
+    expect(convert(html).markdown).toBe("短い説明\n\n```\na\n```");
+  });
+
+  it("<pre> の外の複数行 <code> はコードブロックにする", () => {
+    expect(convert("<code>a\nb</code>").markdown).toBe("```\na\nb\n```");
+  });
+
+  it("コードの内側だけを選択してもコードブロックのまま改行を維持する", () => {
+    document.body.innerHTML = '<div class="cm-content"><span id="a">x</span>\n<span>y</span>\n<span id="z">z</span></div>';
+    const range = document.createRange();
+    range.setStartBefore(document.getElementById("a")!);
+    range.setEndAfter(document.getElementById("z")!);
+    selectRange(range);
+    expect(runSelectionPipeline(extractSelection()).markdown).toBe("```\nx\ny\nz\n```");
   });
 });

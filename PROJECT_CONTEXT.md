@@ -86,6 +86,12 @@
 - `escapeForGoogleDocs` はインラインコード・数式を除外して `<tag>` をエスケープ
 - 仕様テスト `tests/textFidelity.test.ts`（19件）
 
+**コードブロックの判定（2026-11-06）:**
+- 症状: `<pre>` のない構造で、言語ラベルが本文に混ざり、改行がスペースになり、次の段落とつながる
+- `src/formatter/codeBlockDom.ts` 新設。`#code-block-viewer` / `.cm-editor` / `.cm-content` もコードブロックとして扱い、直前の言語ラベルを除去
+- `<br>` / `div` 区切り / 改行文字のいずれでも行を維持。`<pre>` の外の複数行 `<code>` と、コード内側だけの選択もコードブロックにする
+- **未検証**: 上記クラス名は推測で、実 ChatGPT DOM では未確認。症状が残る場合はデバッグトレースの Extracted HTML で確認する
+
 ---
 
 ## 4. 未完成箇所（既知の制約・バグ）
@@ -177,7 +183,7 @@ ChatGPT DOM の HTML を Markdown テキストに変換する（DOM API 使用�
 | `<code>`（インライン） | `` `text` ``（中に `` ` `` があればより長い区切り） |
 | KaTeX（`.katex` / `.katex-display`） | `$tex$` / `$$tex$$` |
 | テキストノード | `escapeMarkdownText` でエスケープ。インライン要素間の空白のみのノードは `" "` |
-| `<pre><code>` | ` ```lang\ncode\n``` ` + `\n\n` |
+| `<pre><code>` / エディタ部品（`CODE_VIEWER_SELECTOR`） | ` ```lang\ncode\n``` ` + `\n\n`（言語ラベルは出力しない） |
 | `<ul><li>` | `- item`（2スペース/階層、`listItemToMarkdown`） |
 | `<ol><li>` | `1. item`（同上） |
 | 単独 `<li>`（部分選択） | `- item` |
@@ -285,6 +291,7 @@ CopyChatGPT/
 │   │   └── extractConversation.ts # ChatGPT DOMから会話抽出 + 選択範囲抽出（SELECTORSオブジェクト集約）
 │   ├── formatter/
 │   │   ├── htmlToMarkdown.ts      # HTML→Markdown（DOMトラバーサル、listItemToMarkdown）
+│   │   ├── codeBlockDom.ts        # コードブロックのDOM判定・言語ラベル除去（content script と共用）
 │   │   ├── inlineSyntax.ts        # Markdownエスケープ・インライン分解（escapeMarkdownText / tokenizeInline）
 │   │   ├── markdownToHtml.ts      # Markdown→HTML（ClipboardItem用、popup.tsから呼ばれる）
 │   │   ├── normalizeMarkdown.ts   # Markdown正規化群（見出し/箇条書き/段落/エスケープ）
@@ -321,4 +328,4 @@ CopyChatGPT/
 
 ---
 
-*最終更新: 2026-11-01（Phase 2B: 段落結合の廃止・インライン空白保持・Markdown エスケープ規則・数式・表・強調入れ子・リンク先符号化・見出しレベル）/ 2026-10-31（Phase 1: Git・テスト基盤・デバッグトレース追加 / Phase 2A: 入れ子リストの階層保持を修正、listSyntax.ts 新設、既知不具合一覧を §4 に追加）*
+*最終更新: 2026-11-06（コードブロック判定: `<pre>` なし構造・言語ラベル除去・改行維持）/ 2026-11-01（Phase 2B: 段落結合の廃止・インライン空白保持・Markdown エスケープ規則・数式・表・強調入れ子・リンク先符号化・見出しレベル）/ 2026-10-31（Phase 1: Git・テスト基盤・デバッグトレース追加 / Phase 2A: 入れ子リストの階層保持を修正、listSyntax.ts 新設、既知不具合一覧を §4 に追加）*

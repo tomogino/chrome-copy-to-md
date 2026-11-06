@@ -1,4 +1,5 @@
 import type { Conversation, ConversationMessage, MessageRole } from "../types/conversation";
+import { CODE_VIEWER_SELECTOR } from "../formatter/codeBlockDom";
 
 // DOMセレクタを1箇所に集約
 const SELECTORS = {
@@ -46,6 +47,13 @@ export function extractSelection(): string {
   div.appendChild(fragment);
   // ボタン・アイコン類を除去（extractMessageContent と同様）
   div.querySelectorAll('button, [role="button"], svg, [aria-label]').forEach((el) => el.remove());
+
+  // コードブロックの内側だけを選択すると断片に親要素が含まれないため、コードとして包み直す
+  const ancestor = range.commonAncestorContainer;
+  const ancestorEl = ancestor.nodeType === Node.ELEMENT_NODE ? (ancestor as Element) : ancestor.parentElement;
+  if (ancestorEl?.closest(`pre, ${CODE_VIEWER_SELECTOR}`)) {
+    return `<pre><code>${div.innerHTML}</code></pre>`;
+  }
   return div.innerHTML;
 }
 

@@ -5,6 +5,7 @@
 import { protectCodeBlocks, restoreCodeBlocks } from "./protectCodeBlocks";
 import { LIST_MARKER, NON_LIST_INDENT, startsWithIndentedListLine, trimKeepingListIndent } from "./listSyntax";
 import { codeSpan, encodeLinkDestination, escapeMarkdownText } from "./inlineSyntax";
+import { CODE_VIEWER_SELECTOR, removeCodeBlockLabels } from "./codeBlockDom";
 
 function getIndent(level: number): string {
   return "  ".repeat(level);
@@ -14,6 +15,7 @@ function getIndent(level: number): string {
  * <code> 要素内のテキストを改行を保持して抽出する。
  * innerText は detached DOM では動作しないため、子ノードを再帰的に走査する。
  * <br> → \n、テキストノードはそのまま収集、span 等は再帰的に処理する。
+ * 行を div で区切る構造（cm-line 等）では、div の前後を改行で区切る。
  */
 function extractCodeText(el: Element): string {
   let result = "";
@@ -24,6 +26,10 @@ function extractCodeText(el: Element): string {
       const tag = (node as Element).tagName.toLowerCase();
       if (tag === "br") {
         result += "\n";
+      } else if (tag === "div") {
+        if (result && !result.endsWith("\n")) result += "\n";
+        result += extractCodeText(node as Element);
+        if (result && !result.endsWith("\n")) result += "\n";
       } else {
         result += extractCodeText(node as Element);
       }
@@ -74,6 +80,20 @@ function wrapInline(inner: string, marker: string): string {
   return core ? `${lead}${marker}${core}${marker}${trail}` : inner;
 }
 
+/** コード文字列をコードブロックの Markdown にする */
+function fencedCode(rawCode: string, lang = ""): string {
+  // ChatGPT の syntax highlight span が行末に \n を持ち span 間のテキストノードも \n を
+  // 追加するため、先頭・末尾の余分な \n を除去し、3連以上の内部 \n を \n\n に制限する
+  const code = rawCode.replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n{3,}/g, "\n\n");
+  // 先頭に \n を追加して前の段落テキストと分離する
+  return `\n\`\`\`${lang}\n${code}\n\`\`\`\n\n`;
+}
+
+/** エディタ部品からコード本文を取り出す（行番号などの周辺要素を含めない） */
+function viewerCodeText(viewer: Element): string {
+  return extractCodeText(viewer.querySelector(".cm-content") ?? viewer);
+}
+
 function nodeToMarkdown(node: Node, listLevel = 0): string {
   if (node.nodeType === Node.TEXT_NODE) {
     const text = node.textContent || "";
@@ -91,6 +111,8 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
   const el = node as Element;
   const tag = el.tagName.toLowerCase();
   const children = Array.from(el.childNodes);
+
+  if (el.matches(CODE_VIEWER_SELECTOR)) return fencedCode(viewerCodeText(el));
 
   if (el.classList.contains("katex-display") || el.classList.contains("katex")) {
     const tex = katexSource(el);
@@ -132,19 +154,18 @@ function nodeToMarkdown(node: Node, listLevel = 0): string {
       if (el.parentElement?.tagName.toLowerCase() === "pre") {
         return el.textContent || "";
       }
-      return codeSpan((el.textContent || "").replace(/\n/g, " "));
+      // <pre> の外にある複数行のコードは、コードブロックとして扱う
+      if ((el.textContent || "").trim().includes("\n")) return fencedCode(extractCodeText(el));
+      return codeSpan(el.textContent || "");
     }
 
     case "pre": {
       const codeEl = el.querySelector("code");
       const langClass = codeEl?.className.match(/language-(\S+)/)?.[1] || "";
+      const viewer = codeEl ? null : el.querySelector(CODE_VIEWER_SELECTOR);
       // innerText は detached DOM では動作しないため extractCodeText で収集する
-      const rawCode = codeEl ? extractCodeText(codeEl) : (el.textContent || "");
-      // ChatGPT の syntax highlight span が行末に \n を持ち span 間のテキストノードも \n を
-      // 追加するため、先頭・末尾の余分な \n を除去し、3連以上の内部 \n を \n\n に制限する
-      const code = rawCode.replace(/^\n+/, "").replace(/\n+$/, "").replace(/\n{3,}/g, "\n\n");
-      // 先頭に \n を追加して前の段落テキストと分離する
-      return `\n\`\`\`${langClass}\n${code}\n\`\`\`\n\n`;
+      const rawCode = codeEl ? extractCodeText(codeEl) : viewer ? viewerCodeText(viewer) : extractCodeText(el);
+      return fencedCode(rawCode, langClass);
     }
 
     case "ul": {
@@ -252,6 +273,7 @@ function tableToMarkdown(table: Element): string {
 export function htmlToMarkdown(html: string): string {
   const wrapper = document.createElement("div");
   wrapper.innerHTML = html;
+  removeCodeBlockLabels(wrapper);
   const raw = nodeToMarkdown(wrapper);
 
   // コードブロックを保護してから空白を正規化
